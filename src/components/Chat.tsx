@@ -30,18 +30,22 @@ export default function Chat({ user, onLogout, onShowProfile }: ChatProps) {
         schema: 'public', 
         table: 'messages' 
       }, async (payload) => {
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', payload.new.user_id)
-          .single();
-        
-        const newMessage = {
-          ...payload.new,
-          profiles: profileData
-        } as Message;
-        
-        setMessages((prev) => [...prev, newMessage]);
+        setMessages((prev) => {
+          // Prevent duplicates
+          if (prev.some(m => m.id === payload.new.id)) return prev;
+          
+          // We need current profiles, but the payload only has user_id
+          // Optimization: check if we already have a user in prev with this ID to avoid one query
+          const existingUser = prev.find(m => m.user_id === payload.new.user_id)?.profiles;
+          
+          if (existingUser) {
+            return [...prev, { ...payload.new, profiles: existingUser } as Message];
+          }
+
+          // Fallback to fetching profile if not found in recent messages
+          fetchProfileForMessage(payload.new);
+          return prev;
+        });
       })
       .subscribe();
 
@@ -57,7 +61,13 @@ export default function Chat({ user, onLogout, onShowProfile }: ChatProps) {
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState();
         const users = Object.values(state).flat() as any[];
-        setOnlineUsers(users);
+        // Filter unique users by ID (Supabase returns multiple presences for multiple tabs)
+        const uniqueUsers = users.reduce((acc: any[], current: any) => {
+          const x = acc.find(item => item.id === current.id);
+          if (!x) return acc.concat([current]);
+          return acc;
+        }, []);
+        setOnlineUsers(uniqueUsers);
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
@@ -77,6 +87,19 @@ export default function Chat({ user, onLogout, onShowProfile }: ChatProps) {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  const fetchProfileForMessage = async (message: any) => {
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', message.user_id)
+      .single();
+    
+    setMessages((prev) => {
+      if (prev.some(m => m.id === message.id)) return prev;
+      return [...prev, { ...message, profiles: profileData } as Message];
+    });
+  };
 
   const fetchProfile = async () => {
     try {
