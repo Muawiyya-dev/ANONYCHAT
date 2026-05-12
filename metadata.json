@@ -1,0 +1,6 @@
+{
+  "name": "AnonyChat Supabase",
+  "description": "A terminal-style anonymous chat application featuring real-time messaging, presence tracking, and custom themes, all powered by Supabase.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
