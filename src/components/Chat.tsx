@@ -6,11 +6,9 @@ import { Send, Hash, Users, Terminal as TerminalIcon, LogOut, Settings } from 'l
 
 interface ChatProps {
   user: any;
-  onLogout: () => void;
-  onShowProfile: () => void;
 }
 
-export default function Chat({ user, onLogout, onShowProfile }: ChatProps) {
+export default function Chat({ user }: ChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -158,121 +156,101 @@ export default function Chat({ user, onLogout, onShowProfile }: ChatProps) {
   };
 
   return (
-    <div className="flex h-screen max-h-screen pt-4 pb-4 gap-4 overflow-hidden">
-      {/* Sidebar */}
-      <div className="hidden md:flex flex-col w-64 bg-black/80 border border-[#00ff66] terminal-shadow">
-        <div className="p-4 border-b border-[#00ff66]/30 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <TerminalIcon className="text-[#00ff66] w-5 h-5" />
-            <span className="font-bold tracking-tighter">NNX_CHANNELS</span>
-          </div>
-        </div>
-        
-        <div className="flex-1 overflow-y-auto p-2">
+    <div className="flex flex-col md:flex-row flex-1 gap-4 overflow-hidden min-h-0">
+      {/* Sidebar - Channels & Users */}
+      <div className="flex flex-col w-full md:w-64 gap-4">
+        <div className="flex-1 flex flex-col p-4 border terminal-border rounded-lg bg-black/60 overflow-hidden">
           <div className="mb-6">
-            <p className="text-[10px] text-[#00ff66]/40 uppercase tracking-[0.2em] mb-2 px-2">Global Feed</p>
-            <button className="w-full flex items-center gap-2 px-3 py-2 bg-[#00ff66]/10 border border-[#00ff66]/30 text-sm">
-              <Hash size={16} /> global-nexus
+            <h3 className="text-xs font-bold text-[#00ff66] mb-4 tracking-widest uppercase neon-text">Channels</h3>
+            <button className="w-full text-left px-3 py-2 border terminal-border-bright rounded-sm text-[10px] uppercase tracking-widest bg-[#00ff66]/10 flex items-center gap-2">
+              <span className="w-1 h-1 bg-[#00ff66] rounded-full shadow-[0_0_5px_#00ff66]" />
+              Global Chat
             </button>
           </div>
 
-          <div>
-            <p className="text-[10px] text-[#00ff66]/40 uppercase tracking-[0.2em] mb-2 px-2">Active Nodes ({onlineUsers.length})</p>
-            <div className="space-y-1">
+          <div className="flex-1 flex flex-col min-h-0">
+            <h3 className="text-xs font-bold text-[#00ff66] mb-4 tracking-widest uppercase neon-text">Private Users</h3>
+            <div className="flex-1 overflow-y-auto pr-2 space-y-2">
               {onlineUsers.map((u: any) => (
-                <div key={u.id} className="flex items-center gap-2 px-3 py-1 text-xs opacity-80">
-                  <div className="w-1.5 h-1.5 rounded-full bg-[#00ff66] animate-pulse" />
-                  {u.username}
-                </div>
+                <button 
+                  key={u.id} 
+                  className="w-full text-left px-3 py-2 border terminal-border rounded-sm text-[10px] hover:bg-[#00ff66]/5 transition-all flex items-center justify-center gap-2 group"
+                >
+                  <span className={`w-2 h-2 rounded-full ${u.id === user.id ? 'bg-[#00ff66]' : 'bg-red-500'} shadow-[0_0_5px_rgba(0,0,0,0.5)]`} />
+                  <span className="truncate opacity-80 group-hover:opacity-100">{u.username}</span>
+                </button>
+              ))}
+              {/* Fillers to match image aesthetic if user count is low */}
+              {onlineUsers.length < 5 && Array.from({ length: 5 - onlineUsers.length }).map((_, i) => (
+                <div key={`filler-${i}`} className="w-full h-8 border terminal-border opacity-20 rounded-sm" />
               ))}
             </div>
-          </div>
-        </div>
-
-        <div className="p-3 border-t border-[#00ff66]/30 bg-[#00ff66]/5">
-          <div className="flex items-center gap-2 mb-3">
-            <div 
-              className="w-8 h-8 flex items-center justify-center border border-[#00ff66] text-xs font-bold"
-              style={{ color: profile?.color || '#00ff66' }}
-            >
-              {profile?.username?.[0].toUpperCase() || '?'}
-            </div>
-            <div className="flex flex-col overflow-hidden">
-              <span className="text-xs font-bold truncate">{profile?.username}</span>
-              <span className="text-[10px] opacity-40 truncate">{user.email}</span>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={onShowProfile} className="flex-1 py-1 border border-[#00ff66]/30 hover:bg-[#00ff66] hover:text-black transition-colors">
-              <Settings size={14} className="mx-auto" />
-            </button>
-            <button onClick={onLogout} className="flex-1 py-1 border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-black transition-colors">
-              <LogOut size={14} className="mx-auto" />
-            </button>
           </div>
         </div>
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col bg-black/80 border border-[#00ff66] terminal-shadow">
-        <div className="p-4 border-b border-[#00ff66]/30 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Hash className="text-[#00ff66]" />
-            <div>
-              <h2 className="font-bold tracking-tight">GLOBAL_NEXUS_CHANNEL</h2>
-              <p className="text-[10px] text-[#00ff66]/50 uppercase tracking-widest">Public Data Stream // Encrypted</p>
-            </div>
-          </div>
+      <div className="flex-1 flex flex-col border terminal-border rounded-lg bg-black/60 overflow-hidden min-h-0">
+        <div className="p-4 border-b border-[#00ff66]/20">
+          <h2 className="text-lg font-bold text-[#00ff66] tracking-widest uppercase neon-text">Global Chat</h2>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
           <AnimatePresence initial={false}>
             {messages.map((m) => (
               <motion.div
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
                 key={m.id}
-                className="flex flex-col gap-1 border-l-2 border-[#00ff66]/10 pl-4 py-1"
-                style={{ borderLeftColor: (m.profiles?.color || '#00ff66') + '44' }}
+                className="p-3 border terminal-border rounded-lg bg-black/40 relative overflow-hidden group"
               >
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 mb-1">
                   <span 
-                    className="text-xs font-bold uppercase tracking-tighter"
+                    className="text-[10px] font-bold uppercase tracking-widest"
                     style={{ color: m.profiles?.color || '#00ff66' }}
                   >
-                    [{m.profiles?.username || 'SYSTEM_NODE'}]
+                    {m.profiles?.username || 'SYSTEM'}
                   </span>
-                  <span className="text-[9px] text-[#00ff66]/30">
+                  <span className="text-[9px] text-[#00ff66]/30 font-mono">
                     {new Date(m.created_at).toLocaleTimeString()}
                   </span>
                 </div>
-                <p className="text-sm leading-relaxed opacity-90 break-words">{m.content}</p>
+                <div className="text-xs leading-relaxed text-[#00ff66]/90 tracking-wide">
+                  {m.content}
+                </div>
+                {/* Visual accent like the red line in image */}
+                <div 
+                  className="absolute left-0 top-0 bottom-0 w-1 opacity-40 group-hover:opacity-100 transition-opacity" 
+                  style={{ backgroundColor: m.profiles?.color || '#00ff66' }}
+                />
               </motion.div>
             ))}
           </AnimatePresence>
           <div ref={messagesEndRef} />
         </div>
 
-        <form onSubmit={sendMessage} className="p-4 border-t border-[#00ff66]/30 bg-black">
-          <div className="relative flex items-center">
-            <input
-              type="text"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="TYPE MESSAGE > _"
-              className="w-full p-4 bg-transparent border border-[#00ff66] text-[#00ff66] placeholder-[#00ff66]/20 font-mono text-sm outline-none focus:ring-1 focus:ring-[#00ff66]/50"
-            />
+        {/* Fancy Input Area */}
+        <form onSubmit={sendMessage} className="p-4 pt-0">
+          <div className="flex gap-2">
+            <div className="w-10 border terminal-border rounded-lg bg-[#00ff66]/5 flex items-center justify-center">
+              <div className="w-1 h-1 bg-[#00ff66] rounded-full animate-pulse" />
+            </div>
+            <div className="flex-1 relative">
+              <input
+                type="text"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                placeholder=""
+                className="w-full h-10 bg-black/80 border terminal-border rounded-lg px-4 text-[#00ff66] font-mono text-xs outline-none focus:terminal-border-bright transition-all"
+              />
+            </div>
             <button
               type="submit"
-              className="absolute right-2 p-2 text-[#00ff66] hover:bg-[#00ff66] hover:text-black transition-colors"
+              className="px-8 border terminal-border rounded-lg text-[10px] font-bold uppercase tracking-[0.2em] hover:bg-[#00ff66]/10 transition-all text-[#00ff66]"
             >
-              <Send size={18} />
+              Send
             </button>
           </div>
-          <p className="text-[9px] text-[#00ff66]/30 mt-2 uppercase tracking-widest flex justify-between">
-            <span>READY FOR TRANSMISSION</span>
-            <span>CHAR_COUNT: {newMessage.length}</span>
-          </p>
         </form>
       </div>
     </div>

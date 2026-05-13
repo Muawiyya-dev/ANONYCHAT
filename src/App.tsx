@@ -127,12 +127,32 @@ export default function App() {
         ) : !session ? (
           <Auth />
         ) : (
-          <div className="flex-1 flex flex-col py-4">
+          <div className="flex-1 flex flex-col py-4 gap-4">
+            {/* Header Navigation */}
+            <div className="space-y-2">
+              <button 
+                onClick={() => setView('chat')}
+                className={`w-full py-2 border rounded-sm transition-all uppercase text-xs tracking-[0.3em] font-bold ${view === 'chat' ? 'terminal-border-bright bg-[#00ff66]/10' : 'terminal-border opacity-60 hover:opacity-100'}`}
+              >
+                CHAT
+              </button>
+              <button 
+                onClick={() => setView('profile')}
+                className={`w-full py-2 border rounded-sm transition-all uppercase text-xs tracking-[0.3em] font-bold ${view === 'profile' ? 'terminal-border-bright bg-[#00ff66]/10' : 'terminal-border opacity-60 hover:opacity-100'}`}
+              >
+                PROFILE
+              </button>
+              <button 
+                onClick={() => supabase.auth.signOut()}
+                className="w-full py-2 border terminal-border opacity-60 hover:opacity-100 hover:bg-red-500/10 hover:border-red-500 hover:text-red-500 rounded-sm transition-all uppercase text-xs tracking-[0.3em] font-bold"
+              >
+                LOGOUT
+              </button>
+            </div>
+
             {view === 'chat' ? (
               <Chat 
                 user={session.user} 
-                onLogout={() => supabase.auth.signOut()} 
-                onShowProfile={() => setView('profile')}
               />
             ) : (
               <div className="flex-1 flex items-center justify-center">
