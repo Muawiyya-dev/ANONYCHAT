@@ -9,6 +9,7 @@ interface ChatProps {
 }
 
 export default function Chat({ user }: ChatProps) {
+  const [activeChannel, setActiveChannel] = useState('global');
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -24,7 +25,7 @@ export default function Chat({ user }: ChatProps) {
       setIsDataLoaded(true);
     };
     init();
-  }, []);
+  }, [activeChannel]);
 
   useEffect(() => {
     const channel = supabase
@@ -38,17 +39,22 @@ export default function Chat({ user }: ChatProps) {
           // Prevent duplicates
           if (prev.some(m => m.id === payload.new.id)) return prev;
           
-          // We need current profiles, but the payload only has user_id
-          // Optimization: check if we already have a user in prev with this ID to avoid one query
-          const existingUser = prev.find(m => m.user_id === payload.new.user_id)?.profiles;
-          
-          if (existingUser) {
-            return [...prev, { ...payload.new, profiles: existingUser } as Message];
+          // Only add if it's for the current channel
+          if (payload.new.channel_id !== activeChannel) return prev;
+
+          // Optimized profile resolution
+          const existingProfile = 
+            (payload.new.user_id === user.id ? profile : null) || 
+            onlineUsers.find(u => u.id === payload.new.user_id) ||
+            prev.find(m => m.user_id === payload.new.user_id)?.profiles;
+
+          if (existingProfile) {
+            return [...prev, { ...payload.new, profiles: existingProfile } as Message];
           }
 
-          // Fallback to fetching profile if not found in recent messages
+          // Fallback: Resolve profile asynchronously
           fetchProfileForMessage(payload.new);
-          return prev;
+          return [...prev, { ...payload.new, profiles: null } as Message];
         });
       })
       .subscribe();
@@ -56,7 +62,7 @@ export default function Chat({ user }: ChatProps) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [activeChannel]);
 
   useEffect(() => {
     const channel = supabase.channel('presence_users');
@@ -93,16 +99,25 @@ export default function Chat({ user }: ChatProps) {
   }, [messages]);
 
   const fetchProfileForMessage = async (message: any) => {
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', message.user_id)
-      .single();
-    
-    setMessages((prev) => {
-      if (prev.some(m => m.id === message.id)) return prev;
-      return [...prev, { ...message, profiles: profileData } as Message];
-    });
+    try {
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', message.user_id)
+        .single();
+      
+      setMessages((prev) => {
+        // Find the index of the message to update
+        const index = prev.findIndex(m => m.id === message.id);
+        if (index === -1) return prev;
+        
+        const newMessages = [...prev];
+        newMessages[index] = { ...newMessages[index], profiles: profileData };
+        return newMessages;
+      });
+    } catch (err) {
+      console.error('Error auto-resolving profile:', err);
+    }
   };
 
   const fetchProfile = async () => {
@@ -136,30 +151,45 @@ export default function Chat({ user }: ChatProps) {
   };
 
   const fetchMessages = async () => {
+    setIsDataLoaded(false);
     try {
       // First attempt with join
       let { data, error: fetchError } = await supabase
         .from('messages')
         .select('*, profiles(*)')
+        .eq('channel_id', activeChannel)
         .order('created_at', { ascending: true })
         .limit(100);
       
       if (fetchError) {
-        // Fallback: If relationship is missing in schema cache, fetch messages only 
-        // and resolve profiles on the fly
         console.warn('Relationship join failed, using fallback:', fetchError.message);
         const { data: simpleData, error: simpleError } = await supabase
           .from('messages')
           .select('*')
+          .eq('channel_id', activeChannel)
           .order('created_at', { ascending: true })
           .limit(100);
           
         if (simpleError) throw simpleError;
         
         if (simpleData) {
-          setMessages(simpleData as Message[]);
-          // Resolve profiles for each message asynchronously
-          simpleData.forEach(m => fetchProfileForMessage(m));
+          setMessages(simpleData.map(m => ({ ...m, profiles: null })) as Message[]);
+          
+          // Batch fetch profiles for these messages
+          const userIds = [...new Set(simpleData.map(m => m.user_id))];
+          if (userIds.length > 0) {
+            const { data: profilesData } = await supabase
+              .from('profiles')
+              .select('*')
+              .in('id', userIds);
+            
+            if (profilesData) {
+              setMessages(prev => prev.map(m => ({
+                ...m,
+                profiles: profilesData.find(p => p.id === m.user_id) || null
+              })));
+            }
+          }
         }
       } else if (data) {
         setMessages(data);
@@ -167,6 +197,47 @@ export default function Chat({ user }: ChatProps) {
     } catch (err: any) {
       console.error('Error fetching messages:', err.message);
       setError('FETCH_ERR: ' + (err.message || 'Check RLS policies'));
+    } finally {
+      setIsDataLoaded(true);
+    }
+  };
+
+  const startPrivateChat = (targetUser: any) => {
+    if (targetUser.id === user.id) return;
+    // Conventional DM channel ID: dm:smallerUserId:largerUserId
+    const ids = [user.id, targetUser.id].sort();
+    const dmChannelId = `dm:${ids[0]}:${ids[1]}`;
+    setActiveChannel(dmChannelId);
+  };
+
+  const getChannelDisplayName = () => {
+    if (activeChannel === 'global') return 'Global Chat';
+    if (activeChannel.startsWith('dm:')) {
+      // Find the other user in DMs
+      const otherUser = onlineUsers.find(u => activeChannel.includes(u.id));
+      return otherUser ? `${otherUser.username} [DM]` : 'Private Chat';
+    }
+    return activeChannel;
+  };
+
+  const sendMessage = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!newMessage.trim()) return;
+
+    const currentMessage = newMessage;
+    setNewMessage('');
+    setError(null);
+
+    const { error: sendError } = await supabase.from('messages').insert({
+      content: currentMessage,
+      user_id: user.id,
+      channel_id: activeChannel
+    });
+
+    if (sendError) {
+      console.error('Error sending message:', sendError);
+      setError('SEND_FAIL: ' + sendError.message);
+      setNewMessage(currentMessage); // Restore message
     }
   };
 
@@ -174,29 +245,18 @@ export default function Chat({ user }: ChatProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const sendMessage = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim()) return;
-
-    const { error } = await supabase.from('messages').insert({
-      content: newMessage,
-      user_id: user.id,
-      channel_id: 'global' // simplified for now
-    });
-
-    if (error) console.error('Error sending message:', error);
-    setNewMessage('');
-  };
-
   return (
     <div className="flex flex-col md:flex-row flex-1 gap-4 overflow-hidden min-h-0">
       {/* Sidebar - Channels & Users */}
       <div className="flex flex-col w-full md:w-64 gap-4">
         <div className="flex-1 flex flex-col p-4 border terminal-border rounded-lg bg-black/60 overflow-hidden">
-          <div className="mb-6">
+            <div className="mb-6">
             <h3 className="text-xs font-bold text-[#00ff66] mb-4 tracking-widest uppercase neon-text">Channels</h3>
-            <button className="w-full text-left px-3 py-2 border terminal-border-bright rounded-sm text-[10px] uppercase tracking-widest bg-[#00ff66]/10 flex items-center gap-2">
-              <span className="w-1 h-1 bg-[#00ff66] rounded-full shadow-[0_0_5px_#00ff66]" />
+            <button 
+              onClick={() => setActiveChannel('global')}
+              className={`w-full text-left px-3 py-2 border rounded-sm text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all ${activeChannel === 'global' ? 'terminal-border-bright bg-[#00ff66]/10' : 'terminal-border opacity-60 hover:opacity-100'}`}
+            >
+              <span className={`w-1 h-1 rounded-full shadow-[0_0_5px_#00ff66] ${activeChannel === 'global' ? 'bg-[#00ff66]' : 'bg-[#00ff66]/30'}`} />
               Global Chat
             </button>
           </div>
@@ -207,7 +267,8 @@ export default function Chat({ user }: ChatProps) {
               {onlineUsers.map((u: any) => (
                 <button 
                   key={u.id} 
-                  className="w-full text-left px-3 py-2 border terminal-border rounded-sm text-[10px] hover:bg-[#00ff66]/5 transition-all flex items-center justify-center gap-2 group"
+                  onClick={() => startPrivateChat(u)}
+                  className={`w-full text-left px-3 py-2 border rounded-sm text-[10px] transition-all flex items-center justify-center gap-2 group ${activeChannel.includes(u.id) ? 'terminal-border-bright bg-[#00ff66]/10' : 'terminal-border opacity-70 hover:opacity-100'}`}
                 >
                   <span className={`w-2 h-2 rounded-full ${u.id === user.id ? 'bg-[#00ff66]' : 'bg-red-500'} shadow-[0_0_5px_rgba(0,0,0,0.5)]`} />
                   <span className="truncate opacity-80 group-hover:opacity-100">{u.username}</span>
@@ -225,7 +286,7 @@ export default function Chat({ user }: ChatProps) {
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col border terminal-border rounded-lg bg-black/60 overflow-hidden min-h-0">
         <div className="p-4 border-b border-[#00ff66]/20 flex justify-between items-center">
-          <h2 className="text-lg font-bold text-[#00ff66] tracking-widest uppercase neon-text">Global Chat</h2>
+          <h2 className="text-lg font-bold text-[#00ff66] tracking-widest uppercase neon-text">{getChannelDisplayName()}</h2>
           {error && (
             <span className="text-[10px] text-red-500 font-bold bg-red-500/10 px-2 py-1 border border-red-500/20">
               [SYSTEM_FAIL: {error}]
@@ -257,7 +318,7 @@ export default function Chat({ user }: ChatProps) {
                     className="text-[10px] font-bold uppercase tracking-widest"
                     style={{ color: m.profiles?.color || '#00ff66' }}
                   >
-                    {m.profiles?.username || 'SYSTEM'}
+                    {m.profiles?.username || (m.profiles === null ? '...' : 'SYSTEM')}
                   </span>
                   <span className="text-[9px] text-[#00ff66]/30 font-mono">
                     {new Date(m.created_at).toLocaleTimeString()}
