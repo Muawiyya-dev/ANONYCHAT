@@ -13,11 +13,17 @@ export default function Chat({ user }: ChatProps) {
   const [newMessage, setNewMessage] = useState('');
   const [profile, setProfile] = useState<Profile | null>(null);
   const [onlineUsers, setOnlineUsers] = useState<Profile[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetchProfile();
-    fetchMessages();
+    const init = async () => {
+      await fetchProfile();
+      await fetchMessages();
+      setIsDataLoaded(true);
+    };
+    init();
   }, []);
 
   useEffect(() => {
@@ -101,12 +107,16 @@ export default function Chat({ user }: ChatProps) {
 
   const fetchProfile = async () => {
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single();
       
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
+
       if (data) setProfile(data);
       else {
         // Create profile if it doesn't exist
@@ -115,25 +125,48 @@ export default function Chat({ user }: ChatProps) {
           username: user.email.split('@')[0],
           color: '#00ff66',
         };
-        await supabase.from('profiles').insert(newProfile);
+        const { error: insertError } = await supabase.from('profiles').insert(newProfile);
+        if (insertError) throw insertError;
         setProfile(newProfile);
       }
     } catch (err: any) {
       console.error('Error fetching profile:', err.message);
+      setError('PROFILE_ERR: ' + err.message);
     }
   };
 
   const fetchMessages = async () => {
     try {
-      const { data } = await supabase
+      // First attempt with join
+      let { data, error: fetchError } = await supabase
         .from('messages')
         .select('*, profiles(*)')
         .order('created_at', { ascending: true })
         .limit(100);
       
-      if (data) setMessages(data);
+      if (fetchError) {
+        // Fallback: If relationship is missing in schema cache, fetch messages only 
+        // and resolve profiles on the fly
+        console.warn('Relationship join failed, using fallback:', fetchError.message);
+        const { data: simpleData, error: simpleError } = await supabase
+          .from('messages')
+          .select('*')
+          .order('created_at', { ascending: true })
+          .limit(100);
+          
+        if (simpleError) throw simpleError;
+        
+        if (simpleData) {
+          setMessages(simpleData as Message[]);
+          // Resolve profiles for each message asynchronously
+          simpleData.forEach(m => fetchProfileForMessage(m));
+        }
+      } else if (data) {
+        setMessages(data);
+      }
     } catch (err: any) {
       console.error('Error fetching messages:', err.message);
+      setError('FETCH_ERR: ' + (err.message || 'Check RLS policies'));
     }
   };
 
@@ -191,11 +224,26 @@ export default function Chat({ user }: ChatProps) {
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col border terminal-border rounded-lg bg-black/60 overflow-hidden min-h-0">
-        <div className="p-4 border-b border-[#00ff66]/20">
+        <div className="p-4 border-b border-[#00ff66]/20 flex justify-between items-center">
           <h2 className="text-lg font-bold text-[#00ff66] tracking-widest uppercase neon-text">Global Chat</h2>
+          {error && (
+            <span className="text-[10px] text-red-500 font-bold bg-red-500/10 px-2 py-1 border border-red-500/20">
+              [SYSTEM_FAIL: {error}]
+            </span>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+          {!isDataLoaded && (
+            <div className="flex items-center justify-center h-full opacity-50 uppercase text-[10px] tracking-widest">
+              Reconstructing data stream...
+            </div>
+          )}
+          {isDataLoaded && messages.length === 0 && !error && (
+            <div className="flex items-center justify-center h-full opacity-30 uppercase text-[10px] tracking-widest italic text-center px-8">
+              Data stream is empty. No messages detected in this sector.
+            </div>
+          )}
           <AnimatePresence initial={false}>
             {messages.map((m) => (
               <motion.div

@@ -23,7 +23,8 @@ export default function Auth() {
       if (error) {
         setError(error.message);
       } else if (isSignUp && data?.user && !data.session) {
-        setError('REGISTRATION_PND: A verification link has been sent to your email. You must confirm it to log in.');
+        // If they get here, Supabase is still requiring confirmation
+        setError('REGISTRATION_PND: A verification link was sent. You must confirm it to log in, OR disable "Confirm email" in your Supabase Auth settings.');
       }
     } catch (err: any) {
       setError('SYST_ERR: ' + (err.message || 'Unknown network error'));

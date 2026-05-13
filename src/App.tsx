@@ -150,18 +150,17 @@ export default function App() {
               </button>
             </div>
 
-            {view === 'chat' ? (
+            <div className={`flex-1 flex-col gap-4 ${view === 'chat' ? 'flex' : 'hidden'}`}>
               <Chat 
                 user={session.user} 
               />
-            ) : (
-              <div className="flex-1 flex items-center justify-center">
-                <ProfileView 
-                  user={session.user} 
-                  onBack={() => setView('chat')} 
-                />
-              </div>
-            )}
+            </div>
+            <div className={`flex-1 items-center justify-center ${view === 'profile' ? 'flex' : 'hidden'}`}>
+              <ProfileView 
+                user={session.user} 
+                onBack={() => setView('chat')} 
+              />
+            </div>
           </div>
         )}
       </main>

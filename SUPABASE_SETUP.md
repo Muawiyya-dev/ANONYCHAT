@@ -41,9 +41,9 @@ on conflict (id) do nothing;
 create table if not exists messages (
   id uuid default gen_random_uuid() primary key,
   content text not null,
-  user_id uuid references auth.users(id) on delete cascade not null,
+  user_id uuid references public.profiles(id) on delete cascade not null,
   channel_id text references channels(id) on delete cascade not null,
-  created_at timestamp with time zone default timezone('utc'::text, now())
+  created_at timestamp with time zone default timezone('utc'::text, now()) default now()
 );
 
 -- 6. Enable Row Level Security (RLS)
@@ -96,10 +96,25 @@ end $$;
    - Name: `VITE_SUPABASE_ANON_KEY` | Value: (Your anon key)
 6. **Save** and **Refresh** the app preview.
 
-## 4. Troubleshooting (Immediate Login)
-By default, Supabase requires you to click a link in your email to log in. To skip this for development:
-1. Go to **Authentication** > **Settings** (Configuration section).
-2. Look for **Email** under "Social Providers" or "Auth Providers".
-3. Disable the toggle for **Confirm email**.
-4. Click **Save**.
-5. You can now Sign Up and log in instantly without checking your inbox.
+## 4. Troubleshooting Support
+### Immediate Login (No Email Confirmation)
+By default, Supabase requires email verification. To skip this:
+1. Go to **Authentication** > **Settings**.
+2. Look for **Email** under Auth Providers.
+3. Disable **Confirm email** and click **Save**.
+
+### Vercel / External Deployment
+If messages are not appearing on Vercel:
+1. Ensure `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are added to your **Environment Variables** in the Vercel dashboard.
+2. **IMPORTANT**: If you see a "Relationship Not Found" error, you must ensure the `user_id` in your `messages` table references `public.profiles(id)`, not `auth.users(id)`. 
+   - Run this fix in the SQL Editor if needed:
+     ```sql
+     alter table messages drop constraint if exists messages_user_id_fkey;
+     alter table messages add constraint messages_user_id_fkey foreign key (user_id) references public.profiles(id);
+     ```
+3. Check the **Realtime** settings in Supabase:
+   - Go to **Database** > **Replication**.
+   - Ensure the `supabase_realtime` publication includes the `messages` table.
+3. Check **RLS Policies**:
+   - Ensure you have applied the `select` policy for messages: `create policy "Messages are viewable by everyone" on messages for select using (true);`.
+   - If no policies exist, Supabase blocks all reads by default.
